@@ -1,0 +1,282 @@
+---
+title: "Modelo"
+author: "Gabriel Granda"
+date: "3/2/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+## Librerías
+library(readxl)
+library(tidyverse)
+library(naniar)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(eeptools)
+```
+
+
+Leemos los datos donde se encuentra la información consolidada: 
+
+```{r}
+ruta4<- "C:\\Users\\GABRIEL\\OneDrive\\Documents\\Trabajo\\datos_hakaton.xlsx"
+clientes<- as.data.frame(read_xlsx(ruta4))
+```
+
+
+Con esto, el número de clientes en la base de datos después de los filtros es: 
+
+```{r}
+dim(clientes)[1]
+```
+
+
+Ahora, borramos las variables de Surname, Geography, application_date, exit_date, birth_date y tiempo, las cuales son variables que no aportan al modelo: 
+
+```{r}
+clientes<- clientes %>% select(-Surname,-Geography,-application_date,-exit_date,-birth_date,-Tiempo)
+```
+
+Ahora, tanto para la realización del modelo estadístico como el análisis estadístico de las variables, vamos a eliminar aquellas observaciones que poseen valores faltantes. 
+
+```{r}
+clientes<- na.omit(clientes)
+clientes<- clientes %>% select(-CustomerId)
+```
+
+
+Por otro lado, al eliminar los valores faltantes para entrenar el modelo, contamos con 
+
+```{r}
+dim(clientes)[1]
+```
+
+
+Transformamos las variables HasCrCard e IsActiveMember a variables del tipo factor: 
+
+```{r}
+clientes$HasCrCard<- as.factor(clientes$HasCrCard)
+clientes$IsActiveMember<- as.factor(clientes$IsActiveMember)
+```
+
+
+
+Para las variables numéricas presentamos su distribución: 
+
+```{r}
+library(caret)
+
+clientes%>%
+  select(EstimatedSalary,Score,Total_cuenta,Edad) %>%
+  gather(metric, value) %>%
+  ggplot(aes(value, fill = metric)) +
+  geom_density(show.legend = FALSE) +
+  facet_wrap(~ metric, scales = "free")
+
+```
+
+
+Podemos ver que las distribuciones de Edad, Salario Estimado y Total de cuenta son sesgadaz a la izquierda, mientras que Score presenta la forma de una distribución normal. Además, presentamos algunos estadísticos de estas variables: 
+
+
+Para el salario estimado, tenemos que 
+
+```{r}
+c('Min' = min(clientes$EstimatedSalary), 'Q1'=quantile(clientes$EstimatedSalary,0.25),
+  'Mediana'=median(clientes$EstimatedSalary), 'Mean'=mean(clientes$EstimatedSalary), 'Q3'=quantile(clientes$EstimatedSalary,0.75),
+  'Máx'=max(clientes$EstimatedSalary), 'Rango'=max(clientes$EstimatedSalary)-min(clientes$EstimatedSalary), 'Desv.est'=sd(clientes$EstimatedSalary))
+```
+
+
+Para score, tenemos que 
+
+
+```{r}
+c('Min' = min(clientes$Score), 'Q1'=quantile(clientes$Score,0.25),
+  'Mediana'=median(clientes$Score), 'Mean'=mean(clientes$Score), 'Q3'=quantile(clientes$Score,0.75),
+  'Máx'=max(clientes$Score), 'Rango'=max(clientes$Score)-min(clientes$Score), 'Desv.est'=sd(clientes$Score))
+```
+
+Podemos ver que la mediana está muy cerca de la media, lo cual explica porque la distribucón de esta variable es simétrica. 
+
+Para número de productos: 
+
+```{r}
+c('Min' = min(clientes$Num_Productos), 'Q1'=quantile(clientes$Num_Productos,0.25),
+  'Mediana'=median(clientes$Num_Productos), 'Mean'=mean(clientes$Num_Productos), 'Q3'=quantile(clientes$Num_Productos,0.75),
+  'Máx'=max(clientes$Num_Productos), 'Rango'=max(clientes$Num_Productos)-min(clientes$Num_Productos), 'Desv.est'=sd(clientes$Num_Productos))
+```
+
+
+Para saldo total en la cuenta: 
+
+
+```{r}
+options(scipen=999)
+
+c('Min' = min(clientes$Total_cuenta), 'Q1'=quantile(clientes$Total_cuenta,0.25),
+  'Mediana'=median(clientes$Total_cuenta), 'Mean'=mean(clientes$Total_cuenta), 'Q3'=quantile(clientes$Total_cuenta,0.75),
+  'Máx'=max(clientes$Total_cuenta), 'Rango'=max(clientes$Total_cuenta)-min(clientes$Total_cuenta), 'Desv.est'=sd(clientes$Total_cuenta))
+```
+
+
+Para edad: 
+
+```{r}
+
+c('Min' = min(clientes$Edad), 'Q1'=quantile(clientes$Edad,0.25),
+  'Mediana'=median(clientes$Edad), 'Mean'=mean(clientes$Edad), 'Q3'=quantile(clientes$Edad,0.75),
+  'Máx'=max(clientes$Edad), 'Rango'=max(clientes$Edad)-min(clientes$Edad), 'Desv.est'=sd(clientes$TEdad))
+```
+
+Ahora, presentamos la tabla de distribución de frecuencias para las variables categóricas: 
+
+```{r}
+library(questionr)
+freq(clientes$Gender)
+```
+
+Vemos que hay más mujeres que hombres, sin embargo, esta diferencia es mínima. 
+
+
+```{r}
+freq(clientes$HasCrCard)
+```
+
+Aproximadamente, el 50.7% de los clientes no tiene tarjeta de crédito, mientras que el 49.3% si posee una tarjeta. 
+
+
+Finalmente, analicemos la variable tarjet que nos servirá para hacer la clasificación: 
+
+```{r}
+freq(clientes$IsActiveMember)
+```
+
+Vemos que el número de personas que mantienen el serviciio es el mismo de las personas que ya no tienen el servicio. Así, nuestros datos son equilibrados. 
+
+
+Transformamos las variables categóricas a dummies: 
+
+```{r}
+library(fastDummies)
+
+categoricas <- c("Gender","HasCrCard" )
+
+clientes_logit <- clientes %>% dummy_cols(select_columns = categoricas)  %>% select(-categoricas)
+
+```
+
+
+Ahora, vamos a dividir lo datos en 80%-20%, el 80% corresponderá a los datos empleados para el entrenamiento del modelo, mientras que el 20% nos servirá para la validación del mismo. 
+
+
+
+```{r}
+### Fijamos el semillero: 
+
+set.seed(1234)
+
+entrenamiento <- sample_frac(clientes_logit, .8)
+
+val <- setdiff(clientes_logit, entrenamiento)
+```
+
+
+
+Así, presentamos el siguiente modelo de regresión logística: 
+
+```{r}
+modelo_logistico <- glm(IsActiveMember~., data = entrenamiento, family = "binomial")
+
+summary(modelo_logistico)
+```
+
+Podemos ver que la variable Femenino y la variable HasCrCard_1 no son significativas, así, corremos el modelo sin estas variables: 
+
+
+```{r}
+modelo_logistico1 <- glm(IsActiveMember ~ EstimatedSalary + Score + Num_Productos + Total_cuenta + 
+    Edad + Gender_Male + HasCrCard_0 , data = entrenamiento, family = "binomial")
+
+summary(modelo_logistico1)
+
+```
+Además, podemos ver que las variables no son significativas pues los p-valores son mayores a 0.05. 
+
+
+Con esto en mente, presentemos un modelo de Random Forest: 
+
+
+```{r}
+set.seed(1234)
+
+entrenamiento1 <- sample_frac(clientes, .8)
+
+val1 <- setdiff(clientes, entrenamiento1)
+
+
+
+library(randomForest)
+
+t1 <- proc.time() 
+
+mod1 <- randomForest(IsActiveMember~., data=entrenamiento1,set.seed(1714))
+
+t1total<- proc.time()-t1 
+
+mod1
+```
+En este árbol de decisión empleamos 500 árboles, sin embargo, vamos a optimizar estos parámetros. Antes de ello, presentemos algunas estadísticas de validación del modelo, para ello, consideremos la matriz de confusión: 
+
+
+```{r}
+CM1<-confusionMatrix(predict(mod1, val1), val1$IsActiveMember)
+CM1
+```
+
+Podemos ver que nuestro modelo clasifica en mayor parte correctamente a las personas que no son miembros y a las personas que se mantienen siendo miembros. 
+
+Además, el acurrancy es: 
+
+
+```{r}
+CM1$overall[1] 
+```
+ Por otro lado, para la base de entrenamiento, obtenemos que 
+ 
+```{r}
+CM2<-confusionMatrix(predict(mod1, entrenamiento1), entrenamiento1$IsActiveMember)
+CM2
+```
+
+
+Además, consideremos el gráfico de error vs el número de árboles:
+
+```{r}
+plot(mod1)
+
+
+```
+
+
+Podemos ver como el error se estabiliza a partir de 300 árboles. 
+
+Grafiquemos también la importancia de las variables: 
+
+```{r}
+varImpPlot(mod1,type=2,main="Importancia variables")
+```
+
+Tenemos que las variables Edad, Total Cuenta, Salario Estimado y Score son las variables que tienen más peso para realizar la clasificación. 
+
+
+
+En resumen. empleamos el modelo de Random Forest porque presenta un nivel de predicción superior a otros árboles de decisión como el AdaBoost.M1. En específico es superior cuando el valor del número de variables seleccionadas al azar en cada nodo es la adecuada. También, porque proporciona estimaciones válidas del error de generalización, fuerza, correlación e importancia de las variables de entrada a través de las muestras fuera de bolsa. Y lo más importante, al ser una técnica no paramétrica, no es necesario establecer supuestos a priori sobre la distribución de las variables utilizadas. Finalmente, porque es robusto frente a datos con ruido y datos atípicos y es un algoritmo de baja varianza, pero alto y manejable sesgo. 
+
+
+Para validar el modelo se emplea la matriz de confusión, también podemos utilizar la Curva ROC, la cual sirve evaluar la capacidad de un modelo de regresión logística binaria para clasificar con exactitud las observaciones. Una curva ROC se construye generando varias tablas de clasificación, para valores de corte que oscilan entre 0 y 1 y calculando la sensibilidad y la especificidad para cada valor. La sensibilidad se grafica en función de la especificidad para construir una curva ROC. 

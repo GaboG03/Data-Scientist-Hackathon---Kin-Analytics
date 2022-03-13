@@ -1,0 +1,176 @@
+---
+title: "Proyecto"
+author: "Gabriel Granda"
+date: "2/2/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+## Librerías
+library(readxl)
+library(tidyverse)
+library(naniar)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(eeptools)
+```
+
+## R Markdown
+
+## Limpieza base de datos de clientes 
+
+Lectura de los datos: 
+
+```{r}
+ruta<- "C:\\Users\\GABRIEL\\OneDrive\\Documents\\Trabajo\\Bases de Datos Challenge de Programacion\\clients_table.txt"
+clientes<- as.data.frame(read.csv(ruta))
+
+
+clientes$application_date <- as.Date(clientes$application_date)
+clientes$exit_date <- as.Date(clientes$exit_date)
+
+# Eliminamos duplicados: 
+
+clientes<- clientes[!duplicated(clientes), ]
+```
+
+```{r}
+ruta1<- "C:\\Users\\GABRIEL\\OneDrive\\Documents\\Trabajo\\Bases de Datos Challenge de Programacion\\products_table.txt"
+productos<- as.data.frame(read.csv(ruta1))
+```
+
+```{r}
+ruta2<- "C:\\Users\\GABRIEL\\OneDrive\\Documents\\Trabajo\\Bases de Datos Challenge de Programacion\\credit_score_table.txt"
+credit<- as.data.frame(read.csv(ruta2))
+```
+
+
+```{r}
+ruta3<- "C:\\Users\\GABRIEL\\OneDrive\\Documents\\Trabajo\\Bases de Datos Challenge de Programacion\\transactions_table.txt"
+transacciones<- as.data.frame(read.csv(ruta3))
+```
+
+Calculamos el número de productos por cliente: 
+
+```{r}
+prod_cliente<- productos %>% group_by(CustomerId) %>% summarise(n=n())
+```
+
+Calculamos el saldo en la cuenta bancaria: 
+
+```{r}
+saldo<- transacciones %>% group_by(CustomerId) %>% summarise(Total_cuenta=sum(Value))
+```
+
+Ahora, trabajamos con la data de credit scoring: 
+
+```{r}
+
+credit<- rename(credit, Fecha=Date)
+
+```
+
+
+Cambiemos los valores en blanco por NA, pues R no reconoce los espacios en blanco como valores faltantes. 
+
+
+
+```{r}
+
+clientes$CustomerId[clientes$CustomerId==""]<- NA
+clientes$Surname[clientes$Surname==""]<- NA
+clientes$Geography[clientes$Geography==""]<- NA
+clientes$Gender[clientes$Gender==""]<- NA
+clientes$HasCrCard[clientes$HasCrCard==""]<- NA
+clientes$IsActiveMember[clientes$IsActiveMember==""]<- NA
+clientes$EstimatedSalary[clientes$EstimatedSalary==""]<- NA
+clientes$application_date[clientes$application_date==""]<- NA
+clientes$birth_date[clientes$birth_date==""]<- NA
+ 
+```
+  
+
+Filtramos de acuerdo a los criterios: 
+
+
+
+```{r}
+
+porcentajeValoresPerdidos <- function(x) { sum(is.na(x)) / length(x)*100}
+
+
+clientes<- clientes %>% filter(  format(application_date,"%Y") >= "2015" )
+
+clientes<- clientes %>% filter( Geography == "Italy" ,  format(exit_date,"%Y") == "2019") 
+
+
+A<- apply(clientes, 1, porcentajeValoresPerdidos)
+```
+
+
+
+Unimos las bases de datos: 
+
+```{r}
+
+clientes1 <- clientes %>% mutate(Fecha = format( application_date, "%Y-%m" )  )
+
+clientes1$Fecha<- as.character(clientes1$Fecha)
+
+
+clientes1<- merge(x = clientes1, y=credit, by = c("CustomerId","Fecha"),all.x = TRUE)
+
+
+clientes1<- merge(clientes1,prod_cliente,by="CustomerId",all.x=TRUE)
+clientes1<- merge(clientes1,saldo,by="CustomerId",all.x=TRUE)
+
+clientes1$Fecha<- NULL
+
+
+
+```
+
+Ahora, calculamos la edad de cada cliente: 
+
+```{r}
+
+age_calc_miss <- function(dob, enddate = Sys.Date(), units = "months", precise = TRUE){
+  retval <- rep(NA_real_, length(dob))
+  
+  miss <- is.na(dob)
+  
+  retval[!miss] <- eeptools::age_calc(dob = dob[!miss], 
+                                      enddate = enddate, 
+                                      units = units, 
+                                      precise = precise)
+  
+  retval
+}
+
+
+clientes1<- clientes1 %>% mutate( Edad = age_calc_miss( as.Date(clientes1$birth_date), units = "years"))
+
+```
+
+Finalmente, calculamos aquellos clientes que tienen al menos dos años de información dentro de la empresa. 
+
+
+```{r}
+clientes1<- clientes1 %>% mutate( Tiempo = age_calc_miss( application_date, units = "years"))
+```
+
+Así, vemos que los 20935 clientes tienen al menos dos años de información del producto.
+
+Con esto, exportamos la base de datos a un archivo en excel: 
+
+```{r}
+library(xlsx)
+
+write.xlsx(clientes1,"datos_hakaton.xlsx")
+```
